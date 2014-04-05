@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Author: Denis de Bernardy <http://www.mesoconcepts.com>
-# Version: 0.2
+# Version: 0.3
 # Copyright Mesoconcepts, All Rights Reserved
 #
 
@@ -11,13 +11,15 @@
 #
 
 if [[ "$HOME" == "/Users/denis" ]]; then
-	readonly debug=1
+	readonly debug=0
 	readonly svn_root=file:///var/svn
 	readonly dbn=api
 else
 	readonly debug=0
-	readonly svn_root=https://svn.semiologic.com
+	readonly svn_root=https://www.semiologic.com/svn/semiologic
 	readonly dbn=semiologic
+	readonly dbuser=semiolgc
+	readonly dbpass=r8NgrQTLUFhJMNE2
 fi
 
 
@@ -35,11 +37,11 @@ trap "cd $cwd; rm -Rf $dir" EXIT
 function sem_exec() {
 	if [[ "$1" = '-v' ]]; then
 		readonly v='' && shift
-		
+
 		local cmd=$1 && shift
 	else
 		local cmd=$1 && shift
-		
+
 		if [[ "$1" = '-v' ]]; then
 			readonly v='' && shift
 		else
@@ -54,13 +56,13 @@ function sem_exec() {
 	elif [[ $# -lt 1 ]]; then
 		echo 'Err: Insufficient number of arguments. Type sem help.' && return 1
 	fi
-	
+
 	# parse details
 	eval "`sem_parse $1`" && shift
-	
+
 	# validate package
 	svn list $svn_root/$svn &> /dev/null
-	
+
 	if [[ $? -ne 0 ]]; then
 		if [[ "$type" != '' ]]; then
 			echo "Err: Failed to lookup $svn_root/$svn" && return 1
@@ -74,49 +76,49 @@ function sem_exec() {
 			fi
 		done
 	fi
-	
+
 	case $cmd in
 		parse )
 			echo $svn || return 1
 			;;
-		
+
 		info )
 			eval "`sem_info $svn $*`" && echo $version || return 1
 			;;
-		
+
 		url )
 			eval "`sem_url $svn $*`" && echo $url || return 1
 			;;
-		
+
 		deps )
 			sem_deps $svn $* || return 1
 			;;
-		
+
 		check )
 			sem_check $svn $* || return 1
 			;;
-		
+
 		ext )
 			sem_ext $svn $* || return 1
 			;;
-		
+
 		tag )
 			sem_tag $svn $* || return 1
 			;;
-		
+
 		zip )
 			sem_pub stable $svn $* || return 1
 			;;
-		
+
 		dev )
 			sem_pub bleeding $svn $* || return 1
 			;;
-		
+
 		* )
 			echo 'Err: Invalid Command. Type sem help.' && return 1
 			;;
 	esac
-	
+
 	return 0
 }
 
@@ -139,7 +141,7 @@ function sem_help() {
 	echo '  sem tag package [version]: tag a package'
 	echo '  sem zip package [version]: publish a stable zip'
 	echo '  sem dev package [version]: publish a bleeding edge zip'
-	
+
 	return 0
 }
 
@@ -154,16 +156,16 @@ function sem_parse() {
 	local type
 	local branch
 	local rev
-	
+
 	svn=${svn##/}
 	svn=${svn%%/}
-	
+
 	if [[ "$svn" =~ @ ]]; then
 		rev=@${svn##*@}
 		svn=${svn%%@*}
 		svn=${svn%%/}
 	fi
-	
+
 	if [[ ! "$svn" =~ (.+)/(trunk|(branches/[^/]+|tags/[^/]+))$ ]]; then
 		package=$svn
 		branch=trunk
@@ -171,26 +173,26 @@ function sem_parse() {
 		package=${BASH_REMATCH[1]}
 		branch=${BASH_REMATCH[2]}
 	fi
-	
+
 	if [[ "$package" =~ ^([^/]+)/([^/]+)$ ]]; then
 		type=${BASH_REMATCH[1]}
 		package=${BASH_REMATCH[2]}
 	elif [[ ! "$package" =~ ^[^/]+$ ]]; then
 		echo "Err: invalid package ($package)" && return 1
 	fi
-	
+
 	svn=$package/$branch$rev
-	
+
 	if [[ "$type" != '' ]]; then
 		svn=$type/$svn
 	fi
-	
+
 	echo "local svn='$svn'"
 	echo "local type='$type'"
 	echo "local package='$package'"
 	echo "local branch='$branch'"
 	echo "local rev='$rev'"
-	
+
 	return 0
 }
 
@@ -204,31 +206,32 @@ function sem_info() {
 	if [[ $# > 1 ]]; then
 		shift && echo "local version='$*'" && return 0
 	fi
-	
+
 	eval "`sem_parse $1`"
-	
-	local hash=`md5 -q -s "$svn"`
-	
+
+	#local hash=`md5 -q -s "$svn"`
+	local hash=`echo -n "$svn" | md5sum  | cut -d ' ' -f 1`
+
 	if [[ -f $hash.info ]]; then
 		echo "local version='`cat $hash.info`'" && return 0
 	fi
-	
+
 	local version
 	local file
-	
+
 	case $type in
 		plugins | lib )
 			file=$package.php
 			;;
-		
+
 		themes )
 			file=style.css
 			;;
-		
+
 		skins )
 			file=skin.css
 			;;
-		
+
 		* )
 			if [[ "$package" = 'sem-pro' ]]; then
 				file='wp-includes/version.php'
@@ -236,11 +239,11 @@ function sem_info() {
 				echo "Err: Unsupported package type ($svn)" && return 1
 			fi
 			;;
-			
+
 	esac
-	
-	svn cat $svn_root/$svn/$file > $hash.info || exit 1
-	
+
+	svn cat $svn_root/$svn/$file > "$hash.info" || exit 1
+
 	if [[ "$package" = 'sem-pro' ]]; then
 		version=`tail -n 20 $hash.info | grep -i -m 1 -E '\\$sem_pro_version[[:space:]]*='`
 		version=${version%"'"*}
@@ -252,11 +255,11 @@ function sem_info() {
 
 		version=${version%%[[:space:]]}
 	fi
-	
-	echo $version > $hash.info
-	
+
+	echo $version > "$hash.info"
+
 	echo "local version='`cat $hash.info`'"
-	
+
 	return 0
 }
 
@@ -267,29 +270,30 @@ function sem_info() {
 
 function sem_url() {
 	eval "`sem_parse $1`"
-	
-	local hash=`md5 -q -s "$svn"`
-	
+
+	#local hash=`md5 -q -s "$svn"`
+	local hash=`echo -n "$svn" | md5sum | cut -d ' ' -f 1`
+
 	if [[ -f $hash.url ]]; then
 		echo "local url='`cat $hash.url`'" && return 0
 	fi
-	
+
 	local url
 	local file
-	
+
 	case $type in
 		plugins | lib )
 			file=$package.php
 			;;
-		
+
 		themes )
 			file=style.css
 			;;
-		
+
 		skins )
 			file=skin.css
 			;;
-		
+
 		* )
 			if [[ "$package" = 'sem-pro' ]]; then
 				echo "local url='http://members.semiologic.com/sem-pro/'" && return 0
@@ -298,19 +302,19 @@ function sem_url() {
 			fi
 			;;
 	esac
-	
+
 	svn cat $svn_root/$svn/$file > $hash.url || exit 1
-	
+
 	url=`head -n 10 $hash.url | grep -i -m 1 -E 'Ur[il][[:space:]]*:.+'`
 	url=${url#*:}
 	url=${url##[[:space:]]}
 
 	url=${url%%[[:space:]]}
-	
+
 	echo $url > $hash.url
-	
+
 	echo "local url='`cat $hash.url`'"
-	
+
 	return 0
 }
 
@@ -321,20 +325,21 @@ function sem_url() {
 
 function sem_deps() {
 	local svn=$1
-	local hash=`md5 -q -s "$svn"`
-	
+	#local hash=`md5 -q -s "$svn"`
+	local hash=`echo -n "$svn" | md5sum | cut -d ' ' -f 1`
+
 	if [[ ! -f $hash.deps ]]; then
-		svn pg svn:externals $svn_root/$svn > $hash.deps.bak
-		cat $hash.deps.bak \
+		svn pg svn:externals $svn_root/$svn > "$hash.deps.bak"
+		cat "$hash.deps.bak" \
 		| sed -E '/^$/d' \
-		> $hash.deps;
+		> "$hash.deps";
 	fi
-	
+
 	cat $hash.deps \
 	| sed -E 's/\^\/(.+)/\1/g' \
 	| sed -E 's/[[:space:]].*//g' \
 	| sed -E 's/\/$//g'
-	
+
 	return 0
 }
 
@@ -345,16 +350,16 @@ function sem_deps() {
 
 function sem_check() {
 	local dep
-	
+
 	for dep in $1 `sem_deps $1`; do
 		eval "`sem_parse $dep`"
-		
+
 		if [[ "$svn" =~ /trunk$ ]]; then
 			eval "`sem_info $svn`"
-			
+
 			version=${version/fork/}
 			version=${version%%[[:space:]]}
-			
+
 			if [[ $version =~ [1-9] && $version =~ ^[0-9]*(\.[0-9]+)*$ ]]; then
 				if [[ "$svn" = "$1" ]]; then
 					continue
@@ -367,7 +372,7 @@ function sem_check() {
 			fi
 		fi
 	done
-	
+
 	return 0
 }
 
@@ -379,21 +384,22 @@ function sem_check() {
 function sem_tag() {
 	eval "`sem_parse $*`"
 	sem_check $svn
-	
+
 	if [[ $? -ne 0 ]]; then
 		eval "`sem_info $*`" && echo "Err: Failed to tag $package v.$version" && return 1
 	fi
-	
+
 	local dep
-	local hash=`md5 -q -s "$svn"`
-	
+	#local hash=`md5 -q -s "$svn"`
+	local hash=`echo -n "$svn" | md5sum | cut -d ' ' -f 1`
+
 	for dep in `sem_deps $svn`; do
 		eval "`sem_parse $dep`"
-		
+
 		if [[ "$svn" =~ /(trunk|branches/[^/]+)$ ]]; then
 			eval "`sem_info $svn`"
 			sem_tag $svn
-			
+
 			if [[ $? -ne 0 ]]; then
 				echo "Err: Failed to tag $package v.$version" && return 1
 			else
@@ -409,39 +415,39 @@ function sem_tag() {
 			fi
 		fi
 	done
-	
+
 	eval "`sem_parse $*`"
 	eval "`sem_info $*`"
-	
+
 	local svn_tag=$version
 	svn_tag=${svn_tag/fork/}
 	svn_tag=${svn_tag%%[[:space:]]}
 	svn_tag=$package/tags/$svn_tag
-	
+
 	if [[ "$type" != '' ]]; then
 		svn_tag=$type/$svn_tag
 	fi
-	
+
 	svn list $svn_root/$svn_tag &> /dev/null
-	
+
 	if [[ $? -ne 0 ]]; then
 		echo -n "Tagging $package v.$version"
-		
+
 		if [[ -s $hash.deps ]]; then
 			svn $v --depth=empty co $svn_root/$svn $hash.branch \
 			&& svn $v ps svn:externals -F $hash.deps $hash.branch \
 			&& svn $v ci -m "Freeze $package v.$version" $hash.branch \
 			|| return 1
 		fi
-		
+
 		svn cp $svn_root/$svn $svn_root/$svn_tag -m "Tag $package v.$version" || return 1
-		
+
 		if [[ -s $hash.deps ]]; then
 			svn $v ps svn:externals -F $hash.deps.bak $hash.branch \
 			&& svn $v ci -m "Unfreeze $package v.$version" $hash.branch || return 1
 		fi
 	fi
-	
+
 	return 0
 }
 
@@ -452,35 +458,36 @@ function sem_tag() {
 
 function sem_pub() {
 	local method=$1 && shift
-	
+
 	eval "`sem_parse $*`"
-	
+
 	if [[ "$method" = 'stable' ]]; then
 		sem_check $svn > /dev/null && sem_tag $svn
 	fi
-	
+
 	local dep
-	
+
 	for dep in `sem_deps $svn`; do
 		sem_check $dep > /dev/null
-		
+
 		if [[ $? -eq 0 ]]; then
 			sem_pub stable $dep || return 1
 		else
 			sem_pub bleeding $dep || return 1
 		fi
 	done
-	
-	local hash=`md5 -q -s "$svn"`
+
+	#local hash=`md5 -q -s "$svn"`
+	local hash=`echo -n "$svn" | md5sum | cut -d ' ' -f 1`
 	local zip=`svn pg sem:zip $svn_root/$svn`
 	local updated=0
-	
+
 	local path=$zip
 	local file=${zip##*/}
 	local assets
-	
+
 	touch $hash.readme
-	
+
 	if [[ "$zip" != '' ]]; then
 		eval "`sem_info $*`"
 		if [[ $debug -ne 0 ]]; then
@@ -489,16 +496,20 @@ function sem_pub() {
 			path=${path##*://}
 			path=${path#www.}
 			path=${path%/*}
-			
+
 			local domain=${path%%/*}
-			
-			path=/usr/local/www/$domain/www/${path#*/}
+
+			if [[ $domain = "semiologic.com" ]]; then
+				path=/home/semiolgc/public_html/${path#*/}
+			else
+				path=/home/semiolgc/domains/$domain/public_html/${path#*/}
+			fi
 		fi
-		
+
 		if [[ "$method" = 'bleeding' ]]; then
 			file=${file%.zip}-dev.zip
 		fi
-		
+
 		if [[ -f $path/$file && ! -d $hash.old ]]; then
 			cp $path/$file $file \
 			&& unzip -q $file \
@@ -506,27 +517,27 @@ function sem_pub() {
 			&& rm $file \
 			|| return 1
 		fi
-		
+
 		svn $v export $svn_root/$svn $package || return 1
-		
+
 		if [[ "$type" != '' && -f $package/readme.txt ]]; then
 			cp $package/readme.txt $hash.readme
 		fi
-		
+
 		if [[ -f $path/$file && `diff -rq $package $hash.old` == '' ]]; then
 			echo "Skipping $file v.$version"
 		else
 			echo "Publishing $file v.$version"
-			
+
 			mkdir -p $path \
 			&& zip $v -r $file $package \
-			&& mv $file $path/$file \
+			&& cp $file $path/$file \
 			&& updated=1 \
 			|| return 1
 		fi
-		
+
 		rm -Rf $package || return 1
-		
+
 		if [[ "$type" = 'skins' ]]; then
 			if [[ -f $path/$package-assets.zip && ! -d $hash.assets ]]; then
 				cp $path/$package-assets.zip $package-assets.zip \
@@ -535,35 +546,35 @@ function sem_pub() {
 				&& rm $package-assets.zip \
 				|| return 1
 			fi
-			
+
 			svn $v export $svn_root/$type/$package/assets $package-assets \
 			&& cp $package-assets/screenshot.jpg $package-screenshot.jpg \
 			|| return 1
-			
+
 			if [[ -f $path/$package-assets.zip && `diff -rq $package-assets $hash.assets` == '' ]]; then
 				echo "Skipping $package assets"
 			else
 				echo "Publishing $package assets"
-				
+
 				mkdir -p $path \
 				&& zip $v -r $package-assets.zip $package-assets \
 				&& mv $package-assets.zip $path/$package-assets.zip \
 				|| return 1
-				
+
 				if [[ -f $package-assets/screenshot.jpg ]]; then
 					mv $package-assets/screenshot.jpg $path/$package-screenshot.jpg \
 					|| return 1
 				fi
 			fi
-			
+
 			rm -Rf $package-assets || return 1
 		fi
 	fi
-	
+
 	if [[ $updated -ne 0 && "$zip" != '' ]]; then
 		local stable_zip=$zip
 		local bleeding_zip=${zip%.zip}-dev.zip
-		
+
 		local ext=`svn pg sem:ext $svn_root/$svn`
 		local rev=`svn pg sem:rev $svn_root/$svn`
 
@@ -571,7 +582,7 @@ function sem_pub() {
 			if [[ "$method" = 'stable' ]]; then
 				sem_ext $* || return 1
 			fi
-			
+
 			case $type in
 				'plugins' )
 					stable_zip=http://downloads.wordpress.org/plugin/$package.zip
@@ -584,38 +595,38 @@ function sem_pub() {
 					;;
 			esac
 		fi
-		
+
 		if [[ "$type" = '' ]]; then
 			type=core
 		fi
-		
+
 		eval "`sem_url $*`"
 		local requires
 		local compat
-		
+
 		if [[ -s $hash.readme ]]; then
 			requires=`grep -i -E 'Requires[[:space:]]+at[[:space:]]+least[[:space:]]*:' $hash.readme`
 			compat=`grep -i -E 'Tested[[:space:]]+up[[:space:]]+to[[:space:]]*:' $hash.readme`
-			
+
 			requires=${requires#*:}
 			requires=${requires##[[:space:]]}
 			requires=${requires%%[[:space:]]}
-			
+
 			compat=${compat#*:}
 			compat=${compat##[[:space:]]}
 			compat=${compat%%[[:space:]]}
 		fi
-		
+
 		local check="SELECT EXISTS ( SELECT 1 FROM packages WHERE type = '$type' AND package = '$package' )"
-		
-		if [[ 1 -eq `mysql -u root $dbn -sN -e "$check"` ]]; then
+
+		if [[ 1 -eq `mysql -u $dbuser -p$dbpass $dbn -sN -e "$check"` ]]; then
 			if [[ "$method" = 'stable' ]]; then
 				zip=$stable_zip
 			else
 				zip=$bleeding_zip
 			fi
-			
-			mysql -u root $dbn -t <<SQL
+
+			mysql -u $dbuser -p$dbpass $dbn -t <<SQL
 
 UPDATE	packages
 SET		url = '$url',
@@ -633,16 +644,17 @@ SQL
 				return 1
 			fi
 		else
-			local hash=`md5 -q -s "$svn"`
+			#local hash=`md5 -q -s "$svn"`
+			local hash=`echo -n "$svn" | md5sum | cut -d ' ' -f 1`
 			local stable_version
 			local bleeding_version
-			
+
 			local stable_requires
 			local bleeding_requires
-			
+
 			local stable_compat
 			local bleeding_compat
-			
+
 			if [[ "$method" = 'stable' ]]; then
 				stable_version=$version
 				stable_requires=$requires
@@ -656,8 +668,8 @@ SQL
 				stable_readme="''"
 				bleeding_readme="load_file('$dir/$hash.readme')"
 			fi
-			
-			mysql -u root $dbn -t <<SQL
+
+			mysql -u $dbuser -p$dbpass $dbn -t <<SQL
 			#cat <<SQL
 
 INSERT INTO packages (
@@ -699,17 +711,17 @@ SQL
 			if [[ $? -ne 0 ]]; then
 				return 1
 			fi
-			
+
 			if [[ "$method" = 'bleeding' ]]; then
 				sem_pub stable $* || return 1
-			fi			
+			fi
 		fi
-		
+
 		if [[ "$method" = 'stable' ]]; then
 			sem_pub bleeding $* || return 1
 		fi
 	fi
-	
+
 	return 0
 }
 
@@ -720,44 +732,44 @@ SQL
 
 function sem_ext() {
 	eval "`sem_parse $*`"
-	
+
 	sem_check $svn > /dev/null || return 0
-	
+
 	local ext=`svn pg sem:ext $svn_root/$svn`
-	
+
 	if [[ "$ext" = '' ]]; then
 		return 0
 	fi
-	
+
 	if [[ $debug -ne 0 && ! -d ~/Desktop/$package ]]; then
 		return 0
 	fi
-	
+
 	eval "`sem_info $*`"
-	
+
 	if [[ $debug -ne 0 ]]; then
 		cp -R ~/Desktop/$package $package.ext || return 1
 	else
 		svn $v co $ext $package.ext || return 1
 	fi
-	
+
 	svn $v rm $package.ext/* &> /dev/null
-	
+
 	svn $v export $svn_root/$svn $package.ext --force \
 	&& svn $v add $package.ext/* \
 	&& svn $v ps svn:eol-style native -R $package.ext \
 	|| return 1
-	
+
 	if [[ "`svn diff $package.ext`" != '' ]]; then
 		echo "Merging $package v.$version"
-		
+
 		if [[ $debug -eq 0 ]]; then
 			svn $v ci $package.ext -m "$package v.$version" || return 1
 		fi
 	fi
-	
+
 	rm -Rf $package.ext || return 1
-	
+
 	return 0
 }
 
@@ -771,7 +783,7 @@ function sem_wp() {
 	local method
 	local methods
 	local zip
-	
+
 	if [[ $version =~ [1-9] && $version =~ ^[0-9]*(\.[0-9]+)*$ ]]; then
 		methods='stable bleeding'
 	elif [[ "$version" = '' ]]; then
@@ -779,15 +791,15 @@ function sem_wp() {
 	else
 		methods=bleeding
 	fi
-	
+
 	local check="SELECT EXISTS ( SELECT 1 FROM packages WHERE type = 'core' AND package = 'wordpress' )"
 	zip=http://wordpress.org/wordpress-$version.zip
-	
-	if [[ 1 -eq `mysql -u root $dbn -sN -e "$check"` ]]; then
+
+	if [[ 1 -eq `mysql -u $dbuser -p$dbpass $dbn -sN -e "$check"` ]]; then
 		for method in $methods; do
 			echo "Publishing WP/$method: $version"
-			
-			mysql -u root $dbn -t <<SQL
+
+			mysql -u $dbuser -p$dbpass $dbn -t <<SQL
 
 UPDATE	packages
 SET		${method}_package = '$zip',
@@ -802,7 +814,7 @@ SQL
 			fi
 		done
 	else
-		mysql -u root $dbn -t <<SQL
+		mysql -u $dbuser -p$dbpass $dbn -t <<SQL
 		#cat <<SQL
 
 INSERT INTO packages (
