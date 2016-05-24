@@ -331,14 +331,14 @@ function sem_deps() {
 	if [[ ! -f $hash.deps ]]; then
 		svn pg svn:externals $svn_root/$svn > "$hash.deps.bak"
 		cat "$hash.deps.bak" \
-		| sed -E '/^$/d' \
+		| sed -r '/^$/d' \
 		> "$hash.deps";
 	fi
 
-	cat $hash.deps \
-	| sed -E 's/\^\/(.+)/\1/g' \
-	| sed -E 's/[[:space:]].*//g' \
-	| sed -E 's/\/$//g'
+	cat "$hash.deps" \
+	| sed -r 's/\^\/(.+)/\1/g' \
+	| sed -r 's/[[:space:]].*//g' \
+	| sed -r 's/\/$//g'
 
 	return 0
 }
@@ -407,9 +407,9 @@ function sem_tag() {
 					version=${version/fork/}
 					version=${version%%[[:space:]]}
 					if [[ "$type" = '' ]]; then
-						sed -i '' -E "s|\^/$svn/?|^/$package/tags/$version/|g" $hash.deps
+						sed -i '' -r "s|\^/$svn/?|^/$package/tags/$version/|g" $hash.deps
 					else
-						sed -i '' -E "s|\^/$svn/?|^/$type/$package/tags/$version/|g" $hash.deps
+						sed -i '' -r "s|\^/$svn/?|^/$type/$package/tags/$version/|g" $hash.deps
 					fi
 				fi
 			fi
@@ -753,10 +753,10 @@ function sem_ext() {
 		svn $v co $ext $package.ext || return 1
 	fi
 
-	svn $v rm $package.ext/* &> /dev/null
+	svn $v rm $package.ext/trunk/* &> /dev/null
 
 	svn $v export $svn_root/$svn $package.ext --force \
-	&& svn $v add $package.ext/* \
+	&& svn $v add $package.ext/trunk/* \
 	&& svn $v ps svn:eol-style native -R $package.ext \
 	|| return 1
 
@@ -764,7 +764,10 @@ function sem_ext() {
 		echo "Merging $package v.$version"
 
 		if [[ $debug -eq 0 ]]; then
-			svn $v ci $package.ext -m "$package v.$version" || return 1
+			svn $v ci $package.ext -m "$package v.$version" \
+			&& svn $v cp $package.ext/trunk/ $package.ext/tags/v.$version \
+			&& svn $v ci $package.ext -m "tagging version v.$version" \
+			|| return 1
 		fi
 	fi
 
